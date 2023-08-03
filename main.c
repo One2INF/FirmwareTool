@@ -8,12 +8,13 @@
 /** Image header.  All fields are in little endian byte order. */
 typedef struct
 {
-  char build_time[32];
+  uint8_t magic_num[8];
+  char device_type[24];
   uint32_t hdr_size;
   uint32_t img_size;
   uint32_t img_flags;
   uint32_t crc32;
-  uint32_t reserve[4];
+  char reserve[464];
 }IMAGE_HEADER_ST __attribute__((aligned(8)));
 
 
@@ -22,24 +23,24 @@ static void print_image_header(IMAGE_HEADER_ST *p);
 static uint32_t calc_file_crc32(FILE *fp);
 
 
-const uint8_t magic_num[4] = {0xAA, 0xBB, 0xCC, 0xDD};
-
 
 int main(int argc, char *argv[])
 {
-  char *InputFileName;
-  char *OutputFileName;
+  char* DeviceType;
+  char* InputFileName;
+  char* OutputFileName;
 
   printf("\r\n----------Firmware tool----------\r\n");
 
-  if(argc == 3)
+  if(argc == 4)
   {
-    InputFileName = argv[1];
-    OutputFileName = argv[2];
+    DeviceType = argv[1];
+    InputFileName = argv[2];
+    OutputFileName = argv[3];
   }
   else
   {
-    printf("Usage: %s input_file_name output_file_name\r\n", argv[0]);
+    printf("Usage: %s DeviceType input_file_name output_file_name\r\n", argv[0]);
     exit(EXIT_FAILURE);
   }
 
@@ -50,12 +51,19 @@ int main(int argc, char *argv[])
     exit(EXIT_FAILURE);
   }
 
+  uint8_t data[16] = {0x12, 0x13, 0x14, 0x15};
+  uint32_t crc32 = stm32crc32_Byte(0xFFFFFFFF, data, 4);
+  printf("crc: %08X\r\n", crc32);
+
   IMAGE_HEADER_ST image_header;
-  snprintf(image_header.build_time, sizeof(image_header.build_time), "%s %s", __DATE__, __TIME__);
+  memset(&image_header, 0, sizeof(image_header));
+  for(uint8_t i = 0; i < 8; ++i)
+    image_header.magic_num[i] = 0x11 * (i + 1);
+  strncpy(image_header.device_type, DeviceType, sizeof(image_header.device_type));
   image_header.crc32 = calc_file_crc32(fp);
   image_header.hdr_size = sizeof(IMAGE_HEADER_ST);
   image_header.img_size = get_file_size(fp);
-  image_header.img_flags = 0xFFFFFFFF;
+  image_header.img_flags = 0x01;
   print_image_header(&image_header); 
 
   rewind(fp);
@@ -96,7 +104,10 @@ static long get_file_size(FILE *fp)
 
 static void print_image_header(IMAGE_HEADER_ST *p)
 {
-  printf("\r\nbuild time\t: %s\r\n",p->build_time);
+  printf("\r\nmagic num\t:");
+  for(uint8_t i = 0; i < 8; ++i)
+    printf("%02X ", p->magic_num[i]);
+  printf("\r\ndevice type\t: %s\r\n",p->device_type);
   printf("header size\t: %u\r\n", p->hdr_size);
   printf("image size\t: %u\r\n", p->img_size);
   printf("image flags\t: %08X\r\n", p->img_flags);
